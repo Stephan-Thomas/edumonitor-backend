@@ -1,5 +1,9 @@
 const RiskAssessment = require("../models/RiskAssessment.model");
 const { calculateRiskLevel } = require("../utils/riskCalculator");
+const Course = require("../models/Course.model");
+const Attendance = require("../models/Attendance.model");
+const Assessment = require("../models/Assessment.model");
+const User = require("../models/User.model");
 
 // @desc    Calculate and get risk assessment for course
 // @route   GET /api/analytics/risk-assessment/:courseId

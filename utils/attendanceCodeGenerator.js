@@ -1,3 +1,7 @@
+const crypto = require("crypto");
+
 exports.generateAttendanceCode = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  // Generate cryptographically secure 6-digit code
+  const code = crypto.randomInt(100000, 1000000).toString();
+  return code;
 };

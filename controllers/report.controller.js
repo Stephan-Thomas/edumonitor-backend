@@ -1,4 +1,9 @@
 const PDFDocument = require("pdfkit");
+const User = require("../models/User.model");
+const Course = require("../models/Course.model");
+const Attendance = require("../models/Attendance.model");
+const Assessment = require("../models/Assessment.model");
+const RiskAssessment = require("../models/RiskAssessment.model");
 
 // @desc    Generate student performance report (PDF)
 // @route   GET /api/reports/student/:studentId/pdf
@@ -42,11 +47,9 @@ exports.generateStudentReportPDF = async (req, res) => {
     );
 
     for (const course of courses) {
-      doc
-        .fontSize(14)
-        .text(`${course.courseCode} - ${course.courseTitle}`, {
-          underline: true,
-        });
+      doc.fontSize(14).text(`${course.courseCode} - ${course.courseTitle}`, {
+        underline: true,
+      });
       doc.fontSize(10);
 
       // Attendance

@@ -28,6 +28,12 @@ router.post(
   register
 );
 
+// Email verification
+router.get(
+  "/verify-email/:token",
+  require("../controllers/auth.controller").verifyEmail
+);
+
 router.post(
   "/login",
   [

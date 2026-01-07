@@ -1,5 +1,7 @@
 const Course = require("../models/Course.model");
 const User = require("../models/User.model");
+const Assessment = require("../models/Assessment.model");
+const AcademicSession = require("../models/AcademicSession.model");
 
 // @desc    Create new course
 // @route   POST /api/courses
@@ -19,12 +21,10 @@ exports.createCourse = async (req, res) => {
     // Check if course already exists
     const existingCourse = await Course.findOne({ courseCode, academicYear });
     if (existingCourse) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Course already exists for this academic year",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Course already exists for this academic year",
+      });
     }
 
     // Verify lecturer exists
@@ -221,11 +221,43 @@ exports.enrollStudents = async (req, res) => {
     }
 
     // Add students who aren't already enrolled
-    studentIds.forEach((id) => {
-      if (!course.enrolledStudents.includes(id)) {
-        course.enrolledStudents.push(id);
+    for (const id of studentIds) {
+      if (course.enrolledStudents.includes(id)) continue;
+
+      // Check capacity per student add
+      if (
+        course.maxStudents &&
+        course.enrolledStudents.length >= course.maxStudents
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Course is full. Maximum capacity reached.",
+        });
       }
-    });
+
+      // Check prerequisites for each student
+      if (course.prerequisites && course.prerequisites.length > 0) {
+        const completedCourses = await Assessment.find({
+          student: id,
+          course: { $in: course.prerequisites },
+          percentage: { $gte: 50 },
+        }).distinct("course");
+
+        const unmetPrerequisites = course.prerequisites.filter(
+          (prereq) => !completedCourses.includes(prereq.toString())
+        );
+
+        if (unmetPrerequisites.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: "Some students have not met prerequisites",
+            unmetPrerequisites,
+          });
+        }
+      }
+
+      course.enrolledStudents.push(id);
+    }
 
     await course.save();
 
@@ -266,6 +298,164 @@ exports.getStudentCourses = async (req, res) => {
     }).populate("lecturer", "firstName lastName email");
 
     res.json({ success: true, courses });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Self-enroll in a course
+// @route   POST /api/courses/enroll
+// @access  Private (Student)
+exports.selfEnrollInCourse = async (req, res) => {
+  try {
+    const { courseCode } = req.body;
+    const studentId = req.user.id;
+
+    const course = await Course.findOne({ courseCode, isActive: true });
+    if (!course) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Course not found" });
+    }
+
+    // Check if already enrolled
+    if (course.enrolledStudents.includes(studentId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Already enrolled in this course" });
+    }
+
+    // Check capacity
+    if (
+      course.maxStudents &&
+      course.enrolledStudents.length >= course.maxStudents
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Course is full. Maximum capacity reached.",
+      });
+    }
+
+    // Check academic session - only allow enrollment in current session
+    const currentSession = await AcademicSession.findOne({ isCurrent: true });
+    if (!currentSession) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No active academic session" });
+    }
+
+    if (
+      course.academicYear !== currentSession.year ||
+      course.semester !== currentSession.semester
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot enroll in courses from past/future semesters",
+      });
+    }
+
+    // Check prerequisites
+    if (course.prerequisites && course.prerequisites.length > 0) {
+      const completedCourses = await Assessment.find({
+        student: studentId,
+        course: { $in: course.prerequisites },
+        percentage: { $gte: 50 },
+      }).distinct("course");
+
+      const unmetPrerequisites = course.prerequisites.filter(
+        (prereq) => !completedCourses.includes(prereq.toString())
+      );
+
+      if (unmetPrerequisites.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Prerequisites not met",
+          unmetPrerequisites,
+        });
+      }
+    }
+
+    course.enrolledStudents.push(studentId);
+    await course.save();
+
+    res.json({
+      success: true,
+      message: "Successfully enrolled in course",
+      course,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get available courses for student to enroll
+// @route   GET /api/courses/available
+// @access  Private (Student)
+exports.getAvailableCoursesForStudent = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const { department, semester, search } = req.query;
+
+    const query = { isActive: true };
+
+    if (department) query.department = department;
+    if (semester) query.semester = semester;
+    if (search) {
+      query.$or = [
+        { courseCode: { $regex: search, $options: "i" } },
+        { courseTitle: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const courses = await Course.find(query)
+      .populate("lecturer", "firstName lastName")
+      .select(
+        "courseCode courseTitle department semester academicYear creditUnits enrolledStudents"
+      );
+
+    // Mark which courses student is enrolled in
+    const coursesWithEnrollmentStatus = courses.map((course) => ({
+      ...course.toObject(),
+      isEnrolled: course.enrolledStudents.includes(studentId),
+      enrollmentCount: course.enrolledStudents.length,
+    }));
+
+    res.json({ success: true, courses: coursesWithEnrollmentStatus });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Unenroll from a course
+// @route   DELETE /api/courses/:courseId/unenroll
+// @access  Private (Student)
+exports.unenrollFromCourse = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const studentId = req.user.id;
+
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Course not found" });
+    }
+
+    // Check enrollment deadline (add this field to Course model)
+    if (course.enrollmentDeadline && new Date() > course.enrollmentDeadline) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Enrollment deadline has passed. Contact lecturer for special permission.",
+      });
+    }
+
+    course.enrolledStudents = course.enrolledStudents.filter(
+      (id) => id.toString() !== studentId
+    );
+    await course.save();
+
+    res.json({ success: true, message: "Successfully unenrolled from course" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

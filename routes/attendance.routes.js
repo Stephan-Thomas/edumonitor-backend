@@ -4,6 +4,9 @@ const { body } = require("express-validator");
 const { validate } = require("../middleware/validator.middleware");
 const { protect, authorize } = require("../middleware/auth.middleware");
 const {
+  attendanceSubmitLimiter,
+} = require("../middleware/rateLimit.middleware");
+const {
   generateCode,
   submitAttendance,
   getSessionAttendance,
@@ -25,6 +28,7 @@ router.post(
   "/submit",
   protect,
   authorize("student"),
+  attendanceSubmitLimiter,
   [
     body("courseId").notEmpty().withMessage("Course ID is required"),
     body("code")

@@ -31,6 +31,15 @@ const limiter = rateLimit({
 });
 app.use("/api/", limiter);
 
+// Apply stronger per-user/account limits for sensitive auth endpoints
+const {
+  createAccountLimiter,
+  loginLimiter,
+} = require("./middleware/rateLimit.middleware");
+
+app.use("/api/auth/register", createAccountLimiter);
+app.use("/api/auth/login", loginLimiter);
+
 // Routes
 app.use("/api/auth", require("./routes/auth.routes"));
 app.use("/api/users", require("./routes/user.routes"));

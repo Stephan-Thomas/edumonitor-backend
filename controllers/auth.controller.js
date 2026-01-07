@@ -46,30 +46,24 @@ exports.register = async (req, res) => {
     let userId;
     if (role === "student") {
       if (!matricNumber) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Matric number is required for students",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Matric number is required for students",
+        });
       }
       userId = matricNumber;
     } else if (role === "lecturer") {
       if (!lecturerRegistrationNumber) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Lecturer registration number is required",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Lecturer registration number is required",
+        });
       }
       if (!req.file) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Proof file is required for lecturers",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Proof file is required for lecturers",
+        });
       }
       userId = lecturerRegistrationNumber;
     } else {
@@ -101,17 +95,30 @@ exports.register = async (req, res) => {
       gender,
       proof: req.file ? req.file.path : undefined, // Save file path if uploaded
     });
+    // Generate email verification token
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+    user.emailVerificationToken = crypto
+      .createHash("sha256")
+      .update(verificationToken)
+      .digest("hex");
+    user.emailVerificationExpire = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
 
     const accessToken = generateAccessToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    // Save refresh token
+    // Save refresh token and verification fields
     user.refreshToken = refreshToken;
     await user.save();
 
+    // In production, send this link via email. For now return token/url in response for dev/testing
+    const verificationUrl = `${req.protocol}://${req.get(
+      "host"
+    )}/api/auth/verify-email/${verificationToken}`;
+
     res.status(201).json({
       success: true,
-      message: "User registered successfully",
+      message:
+        "User registered successfully. Verify your email to activate the account.",
       user: {
         id: user._id,
         userId: user.userId,
@@ -122,15 +129,14 @@ exports.register = async (req, res) => {
       },
       accessToken,
       refreshToken,
+      verificationUrl, // remove in production
     });
   } catch (error) {
     console.error("Registration error:", error); // Log full error with stack trace for debugging
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: error.message || "Internal server error",
-      });
+    res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
   }
 };
 
@@ -153,6 +159,15 @@ exports.login = async (req, res) => {
       return res.status(401).json({
         success: false,
         message: "Account is inactive. Contact administrator.",
+      });
+    }
+
+    // Require email verification
+    if (!user.isEmailVerified) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Email not verified. Please verify your email before logging in.",
       });
     }
 
@@ -309,6 +324,38 @@ exports.resetPassword = async (req, res) => {
     await user.save();
 
     res.json({ success: true, message: "Password reset successful" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Verify email
+// @route   GET /api/auth/verify-email/:token
+// @access  Public
+exports.verifyEmail = async (req, res) => {
+  try {
+    const emailVerificationToken = crypto
+      .createHash("sha256")
+      .update(req.params.token)
+      .digest("hex");
+
+    const user = await User.findOne({
+      emailVerificationToken,
+      emailVerificationExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired token" });
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpire = undefined;
+    await user.save();
+
+    res.json({ success: true, message: "Email verified successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

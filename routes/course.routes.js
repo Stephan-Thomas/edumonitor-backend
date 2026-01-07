@@ -12,6 +12,9 @@ const {
   enrollStudents,
   getLecturerCourses,
   getStudentCourses,
+  selfEnrollInCourse,
+  getAvailableCoursesForStudent,
+  unenrollFromCourse,
 } = require("../controllers/course.controller");
 
 router.post(
@@ -45,5 +48,12 @@ router.post(
 );
 router.get("/lecturer/:lecturerId", protect, getLecturerCourses);
 router.get("/student/:studentId", protect, getStudentCourses);
+router.post("/enroll-self", protect, authorize("student"), selfEnrollInCourse);
+router.get(
+  "/available",
+  protect,
+  authorize("student"),
+  getAvailableCoursesForStudent
+);
 
 module.exports = router;

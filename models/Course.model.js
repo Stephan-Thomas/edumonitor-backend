@@ -20,6 +20,9 @@ const courseSchema = new mongoose.Schema(
       required: true,
     },
     enrolledStudents: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    maxStudents: { type: Number, default: 100 },
+    prerequisites: [{ type: mongoose.Schema.Types.ObjectId, ref: "Course" }],
+    enrollmentDeadline: Date,
     attendanceCodeSettings: {
       validityDuration: { type: Number, default: 15 },
       campusIPRanges: [String],

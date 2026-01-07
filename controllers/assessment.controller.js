@@ -2,6 +2,7 @@ const Assessment = require("../models/Assessment.model");
 const Course = require("../models/Course.model");
 const csv = require("csv-parser");
 const fs = require("fs");
+const User = require("../models/User.model");
 
 // @desc    Create assessment record
 // @route   POST /api/assessments
