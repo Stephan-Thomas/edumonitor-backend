@@ -12,7 +12,6 @@ const jwt = require("jsonwebtoken");
 exports.register = async (req, res) => {
   try {
     const {
-      userId,
       email,
       password,
       role,
@@ -23,19 +22,73 @@ exports.register = async (req, res) => {
       phoneNumber,
       dateOfBirth,
       gender,
+      matricNumber, // For students
+      lecturerRegistrationNumber, // For lecturers
     } = req.body;
 
-    // Check if user exists
-    const existingUser = await User.findOne({ $or: [{ email }, { userId }] });
+    // Explicitly validate required fields
+    if (
+      !email ||
+      !password ||
+      !firstName ||
+      !lastName ||
+      !department ||
+      !phoneNumber ||
+      !dateOfBirth ||
+      !gender
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required fields" });
+    }
+
+    // Role-specific validation
+    let userId;
+    if (role === "student") {
+      if (!matricNumber) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Matric number is required for students",
+          });
+      }
+      userId = matricNumber;
+    } else if (role === "lecturer") {
+      if (!lecturerRegistrationNumber) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Lecturer registration number is required",
+          });
+      }
+      if (!req.file) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Proof file is required for lecturers",
+          });
+      }
+      userId = lecturerRegistrationNumber;
+    } else {
+      return res.status(400).json({ success: false, message: "Invalid role" });
+    }
+
+    // Check if user exists (update query to check email or userId)
+    const existingUser = await User.findOne({
+      $or: [{ email }, { userId }], // Assuming schema uses 'userId' now
+    });
     if (existingUser) {
       return res
         .status(400)
         .json({ message: "User already exists with this email or ID" });
     }
 
-    // Create user
+    // Create user (update schema to use 'userId' instead of 'matricNumber')
     const user = await User.create({
-      userId,
+      userId, // Generic ID field
       email,
       password,
       role: role || "student",
@@ -46,6 +99,7 @@ exports.register = async (req, res) => {
       phoneNumber,
       dateOfBirth,
       gender,
+      proof: req.file ? req.file.path : undefined, // Save file path if uploaded
     });
 
     const accessToken = generateAccessToken(user._id);
@@ -70,7 +124,13 @@ exports.register = async (req, res) => {
       refreshToken,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("Registration error:", error); // Log full error with stack trace for debugging
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: error.message || "Internal server error",
+      });
   }
 };
 
@@ -90,12 +150,10 @@ exports.login = async (req, res) => {
     }
 
     if (!user.isActive) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          message: "Account is inactive. Contact administrator.",
-        });
+      return res.status(401).json({
+        success: false,
+        message: "Account is inactive. Contact administrator.",
+      });
     }
 
     // Check password
@@ -118,7 +176,7 @@ exports.login = async (req, res) => {
       message: "Login successful",
       user: {
         id: user._id,
-        userId: user.userId,
+        matricNumber: user.matricNumber,
         email: user.email,
         role: user.role,
         fullName: user.fullName,

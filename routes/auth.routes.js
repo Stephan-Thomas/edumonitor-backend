@@ -38,6 +38,12 @@ router.post(
   login
 );
 
+router.get("/me", protect, (req, res) => {
+  res.json({
+    user: req.user,
+  });
+});
+
 router.post("/refresh-token", refreshToken);
 router.post("/logout", protect, logout);
 router.post(
