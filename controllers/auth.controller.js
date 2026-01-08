@@ -59,12 +59,7 @@ exports.register = async (req, res) => {
           message: "Lecturer registration number is required",
         });
       }
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: "Proof file is required for lecturers",
-        });
-      }
+      // Proof file is optional for lecturers now; if provided it will be saved
       userId = lecturerRegistrationNumber;
     } else {
       return res.status(400).json({ success: false, message: "Invalid role" });
