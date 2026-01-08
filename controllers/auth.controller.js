@@ -95,30 +95,19 @@ exports.register = async (req, res) => {
       gender,
       proof: req.file ? req.file.path : undefined, // Save file path if uploaded
     });
-    // Generate email verification token
-    const verificationToken = crypto.randomBytes(32).toString("hex");
-    user.emailVerificationToken = crypto
-      .createHash("sha256")
-      .update(verificationToken)
-      .digest("hex");
-    user.emailVerificationExpire = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+    // Mark email as verified by default (skip verification flow)
+    user.isEmailVerified = true;
 
     const accessToken = generateAccessToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    // Save refresh token and verification fields
+    // Save refresh token
     user.refreshToken = refreshToken;
     await user.save();
 
-    // In production, send this link via email. For now return token/url in response for dev/testing
-    const verificationUrl = `${req.protocol}://${req.get(
-      "host"
-    )}/api/auth/verify-email/${verificationToken}`;
-
     res.status(201).json({
       success: true,
-      message:
-        "User registered successfully. Verify your email to activate the account.",
+      message: "User registered successfully",
       user: {
         id: user._id,
         userId: user.userId,
@@ -129,7 +118,6 @@ exports.register = async (req, res) => {
       },
       accessToken,
       refreshToken,
-      verificationUrl, // remove in production
     });
   } catch (error) {
     console.error("Registration error:", error); // Log full error with stack trace for debugging
@@ -162,14 +150,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Require email verification
-    if (!user.isEmailVerified) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Email not verified. Please verify your email before logging in.",
-      });
-    }
+    // NOTE: email verification is optional for login - do not block login here
 
     // Check password
     const isMatch = await user.comparePassword(password);
