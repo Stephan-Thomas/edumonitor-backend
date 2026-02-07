@@ -8,6 +8,7 @@ const {
   getAllStudents,
   getAllLecturers,
   updateUserStatus,
+  updateUserRole,
 } = require("../controllers/user.controller");
 
 router.get("/profile", protect, getProfile);
@@ -16,10 +17,11 @@ router.get(
   "/students",
   protect,
   authorize("lecturer", "admin"),
-  getAllStudents
+  getAllStudents,
 );
 router.get("/lecturers", protect, authorize("admin"), getAllLecturers);
 router.get("/:id", protect, authorize("lecturer", "admin"), getUserById);
 router.put("/:id/status", protect, authorize("admin"), updateUserStatus);
+router.put("/:id/role", protect, authorize("admin"), updateUserRole);
 
 module.exports = router;

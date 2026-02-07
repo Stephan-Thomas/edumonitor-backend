@@ -158,3 +158,61 @@ exports.updateUserStatus = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// ============================================================================
+// Allows an admin to promote or demote another user's role.
+// e.g., promote a lecturer to admin, or demote an admin back to lecturer.
+// ============================================================================
+exports.updateUserRole = async (req, res) => {
+  try {
+    const { role } = req.body;
+    const targetUserId = req.params.id;
+
+    // Prevent admin from changing their own role
+    if (targetUserId === req.user.id) {
+      return res
+        .status(400)
+        .json({ success: false, message: "You cannot change your own role" });
+    }
+
+    // Only allow valid roles
+    if (!["student", "lecturer", "admin"].includes(role)) {
+      return res.status(400).json({ success: false, message: "Invalid role" });
+    }
+
+    const user = await User.findById(targetUserId);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    // Don't allow demoting the last admin
+    if (user.role === "admin" && role !== "admin") {
+      const adminCount = await User.countDocuments({ role: "admin" });
+      if (adminCount <= 1) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Cannot demote the last admin. Promote another user to admin first.",
+        });
+      }
+    }
+
+    user.role = role;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `User role updated to '${role}'`,
+      user: {
+        id: user._id,
+        userId: user.userId,
+        fullName: user.fullName,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

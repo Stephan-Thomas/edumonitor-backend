@@ -9,6 +9,11 @@ const jwt = require("jsonwebtoken");
 // @desc    Register user
 // @route   POST /api/auth/register
 // @access  Public
+
+//   - Students can only register as "student"
+//   - Lecturers can only register as "lecturer"
+//   - "admin" role is BLOCKED from registration entirely
+//   - Only an existing admin can promote a lecturer to admin
 exports.register = async (req, res) => {
   try {
     const {
@@ -22,11 +27,11 @@ exports.register = async (req, res) => {
       phoneNumber,
       dateOfBirth,
       gender,
-      matricNumber, // For students
-      lecturerRegistrationNumber, // For lecturers
+      matricNumber,
+      lecturerRegistrationNumber,
     } = req.body;
 
-    // Explicitly validate required fields
+    // Validate required fields
     if (
       !email ||
       !password ||
@@ -42,45 +47,66 @@ exports.register = async (req, res) => {
         .json({ success: false, message: "Missing required fields" });
     }
 
-    // Role-specific validation
+    // Block admin registration entirely
+    if (role === "admin") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Admin accounts cannot be created through registration. Contact system administrator.",
+      });
+    }
+
+    // Validate role is either student or lecturer
+    if (!["student", "lecturer"].includes(role)) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Invalid role. Use 'student' or 'lecturer'.",
+        });
+    }
+
+    // Role-specific validation and userId assignment
     let userId;
     if (role === "student") {
       if (!matricNumber) {
-        return res.status(400).json({
-          success: false,
-          message: "Matric number is required for students",
-        });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Matric number is required for students",
+          });
       }
       userId = matricNumber;
     } else if (role === "lecturer") {
       if (!lecturerRegistrationNumber) {
-        return res.status(400).json({
-          success: false,
-          message: "Lecturer registration number is required",
-        });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Lecturer registration number is required",
+          });
       }
-      // Proof file is optional for lecturers now; if provided it will be saved
       userId = lecturerRegistrationNumber;
-    } else {
-      return res.status(400).json({ success: false, message: "Invalid role" });
     }
 
-    // Check if user exists (update query to check email or userId)
-    const existingUser = await User.findOne({
-      $or: [{ email }, { userId }], // Assuming schema uses 'userId' now
-    });
+    // Check if user already exists
+    const existingUser = await User.findOne({ $or: [{ email }, { userId }] });
     if (existingUser) {
       return res
         .status(400)
-        .json({ message: "User already exists with this email or ID" });
+        .json({
+          success: false,
+          message: "User already exists with this email or ID",
+        });
     }
 
-    // Create user (update schema to use 'userId' instead of 'matricNumber')
+    // Create user
     const user = await User.create({
-      userId, // Generic ID field
+      userId,
       email,
       password,
-      role: role || "student",
+      role,
       firstName,
       lastName,
       middleName,
@@ -88,15 +114,11 @@ exports.register = async (req, res) => {
       phoneNumber,
       dateOfBirth,
       gender,
-      proof: req.file ? req.file.path : undefined, // Save file path if uploaded
     });
-    // Mark email as verified by default (skip verification flow)
-    user.isEmailVerified = true;
 
     const accessToken = generateAccessToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    // Save refresh token
     user.refreshToken = refreshToken;
     await user.save();
 
@@ -115,11 +137,13 @@ exports.register = async (req, res) => {
       refreshToken,
     });
   } catch (error) {
-    console.error("Registration error:", error); // Log full error with stack trace for debugging
-    res.status(500).json({
-      success: false,
-      message: error.message || "Internal server error",
-    });
+    console.error("Registration error:", error);
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: error.message || "Internal server error",
+      });
   }
 };
 
@@ -257,7 +281,7 @@ exports.forgotPassword = async (req, res) => {
 
     // In production, send email with reset link
     const resetUrl = `${req.protocol}://${req.get(
-      "host"
+      "host",
     )}/reset-password/${resetToken}`;
 
     // TODO: Implement email sending
